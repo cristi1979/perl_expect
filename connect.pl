@@ -152,9 +152,9 @@ sub ssh_commands {
 sub connect_as_root {
 	my $host = shift;
 	INFO "*************** NEW HOST $host";
-	my ( $ssh, $user, $pass );
-        my user_pass = [ ["user1", "pass1"], ["user2", "pass2"]];
-	my $all_user_pass = [];
+	my ( $ssh, $user, $pass, $key );
+	my $all_user_pass = [ [ "user1", "pass1" ], [ "user2", "pass2" ] ];
+	my $all_user_key = [ [ "user1", "/root/.ssh/sdt_user.pem" ] ];
 
 	foreach my $user_pass (@$all_user_pass) {
 		( $user, $pass ) = ( $user_pass->[0], $user_pass->[1] );
@@ -171,7 +171,26 @@ sub connect_as_root {
 		);
 		last if !$ssh->error;
 	}
-	LOGDIE "Can't connect to $host.\n" if $ssh->error;
+
+	if ( !defined $ssh or $ssh->error ) {
+		foreach my $user_key (@$all_user_key) {
+			( $user, $key ) = ( $user_key->[0], $user_key->[1] );
+			INFO "Trying user $user.\n";
+			$ssh = Net::OpenSSH->new(
+				$host,
+				master_opts => [
+					-o => "UserKnownHostsFile=/dev/null",
+					-o => "StrictHostKeyChecking=no"
+				],
+				user    => $user,
+				key_path=> $key,
+				timeout => $timeout
+			);
+			last if !$ssh->error;
+		}
+	}
+
+	LOGDIE "Can't connect to $host.\n" if !defined $ssh or $ssh->error;
 	INFO "Connected to $host.\n";
 	my ( $run_cmd_function, $worker ) = ( \&ssh_commands, $ssh );
 	if ( $user ne "root" ) {
@@ -238,7 +257,7 @@ sub fork_function {
 
 my @hosts = (
 	qw/
-host1,
+host1
 host2
 	  /
 );
@@ -246,6 +265,9 @@ host2
 sub install_puppet {
 	my ( $ssh, $run_cmd_function, $worker ) = @_;
 	my $ret;
+	$ret = &$run_cmd_function( $worker,
+"yum install http://v-so-repo-01.synygy.net/repos/optymyze/6Server/RPM/optymyze_repos-1.0-1.noarch.rpm -y"
+	);
 	## no puppet installed
 	if ( &$run_cmd_function( $worker, "rpm -qa | grep puppet" ) ) {
 		$ret = &$run_cmd_function( $worker, "yum install puppet -y" );
@@ -254,7 +276,12 @@ sub install_puppet {
 	}
 	## puppet test failed
 	$ret = &$run_cmd_function( $worker, "yum update puppet -y" );
-	if ( &$run_cmd_function( $worker, "puppet agent --test --configtimeout 900" ) ) {
+	if (
+		&$run_cmd_function(
+			$worker, "puppet agent --test --configtimeout 900"
+		)
+	  )
+	{
 		&$run_cmd_function( $worker, "sleep 300" );
 		if ( &$run_cmd_function( $worker, "puppet agent --test" ) ) {
 			&$run_cmd_function( $worker, "rm -rf /var/lib/puppet/ssl/" );
@@ -266,11 +293,15 @@ sub install_puppet {
 
 }
 
+
 sub run_remote_commands {
 	my $host = shift;
 	my ( $ssh, $run_cmd_function, $worker ) = connect_as_root($host);
 
-        install_puppet($ssh, $run_cmd_function, $worker);
+	#  list_of_repos($ssh, $run_cmd_function, $worker);
+	#   restart_puppet($ssh, $run_cmd_function, $worker);
+	#   install_puppet($ssh, $run_cmd_function, $worker);
+	install_puppet( $ssh, $run_cmd_function, $worker );
 	INFO "******** AAAAAALLLLLL OK ***************\n";
 	return 0;
 }
