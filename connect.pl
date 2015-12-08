@@ -262,46 +262,18 @@ host2
 	  /
 );
 
-sub install_puppet {
-	my ( $ssh, $run_cmd_function, $worker ) = @_;
-	my $ret;
-	$ret = &$run_cmd_function( $worker,
-"yum install http://v-so-repo-01.synygy.net/repos/optymyze/6Server/RPM/optymyze_repos-1.0-1.noarch.rpm -y"
-	);
-	## no puppet installed
-	if ( &$run_cmd_function( $worker, "rpm -qa | grep puppet" ) ) {
-		$ret = &$run_cmd_function( $worker, "yum install puppet -y" );
-		$ret = &$run_cmd_function( $worker, "/etc/init.d/puppet restart" );
-		$ret = &$run_cmd_function( $worker, "chkconfig puppet off" );
-	}
-	## puppet test failed
-	$ret = &$run_cmd_function( $worker, "yum update puppet -y" );
-	if (
-		&$run_cmd_function(
-			$worker, "puppet agent --test --configtimeout 900"
-		)
-	  )
-	{
-		&$run_cmd_function( $worker, "sleep 300" );
-		if ( &$run_cmd_function( $worker, "puppet agent --test" ) ) {
-			&$run_cmd_function( $worker, "rm -rf /var/lib/puppet/ssl/" );
-			&$run_cmd_function( $worker, "puppet agent --test" );
-			LOGDIE "BUGA BUGA BUGA!!\n"
-			  if ( &$run_cmd_function( $worker, "puppet agent --test" ) );
-		}
-	}
 
+sub run_puppet {
+        my ( $ssh, $run_cmd_function, $worker ) = @_;
+        my $ret;
+        &$run_cmd_function( $worker, "puppet agent -t" );
 }
 
 
 sub run_remote_commands {
 	my $host = shift;
 	my ( $ssh, $run_cmd_function, $worker ) = connect_as_root($host);
-
-	#  list_of_repos($ssh, $run_cmd_function, $worker);
-	#   restart_puppet($ssh, $run_cmd_function, $worker);
-	#   install_puppet($ssh, $run_cmd_function, $worker);
-	install_puppet( $ssh, $run_cmd_function, $worker );
+        run_puppet( $ssh, $run_cmd_function, $worker );
 	INFO "******** AAAAAALLLLLL OK ***************\n";
 	return 0;
 }
